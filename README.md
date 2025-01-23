@@ -12,7 +12,7 @@ A React component for transforming and processing material test data from Excel 
 
 ```bash
 # Clone the repository
-git clone [repository-url]
+git clone https://github.com/mengyaozhang888/data-transformer.git
 
 # Install dependencies
 npm install
