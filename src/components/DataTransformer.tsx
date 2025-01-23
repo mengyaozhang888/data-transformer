@@ -13,7 +13,7 @@ const DataTransformer: React.FC = () => {
       const workbook = XLSX.read(e.target.result, {
         type: "binary",
         cellStyles: true,
-        cellFormula: true, // Changed from cellFormulas
+        cellFormula: true,
         cellDates: true,
         cellNF: true,
         sheetStubs: true,
@@ -41,23 +41,74 @@ const DataTransformer: React.FC = () => {
           if (!row || row.length < 10) continue;
 
           const getAvgHardness = (hardnessStr: any): number | null => {
-            if (!hardnessStr) return null;
-            const values = hardnessStr
-              .toString()
-              .split("\n")
-              .map((s: string) => {
-                const matches = s.toString().match(/\d+\s+(\d+\.?\d*)/);
-                return matches ? parseFloat(matches[1]) : null;
-              })
-              .filter((n: number | null): n is number => n !== null);
-            return values.length
-              ? Number(
+            if (!hardnessStr || hardnessStr.toString().trim() === "")
+              return null;
+
+            const str = hardnessStr.toString().trim();
+
+            // Case 1: Formatted values like "09 043.3"
+            const formattedMatch = str.match(/\d+\s+(\d+\.?\d*)/g);
+            if (formattedMatch) {
+              const values = formattedMatch
+                .map((s: string) => {
+                  const match = s.match(/\d+\s+(\d+\.?\d*)/);
+                  return match ? parseFloat(match[1]) : null;
+                })
+                .filter((n: number | null): n is number => n !== null);
+
+              if (values.length > 0) {
+                return Number(
                   (
                     values.reduce((a: number, b: number) => a + b) /
                     values.length
                   ).toFixed(1)
-                )
-              : null;
+                );
+              }
+            }
+
+            // Case 2: Period-separated values (e.g. "47.47.46")
+            if (str.includes(".")) {
+              const values = str
+                .split(".")
+                .map((s: string) => parseInt(s))
+                .filter((n: number) => !isNaN(n));
+
+              if (values.length > 0) {
+                return Number(
+                  (
+                    values.reduce((a: number, b: number) => a + b) /
+                    values.length
+                  ).toFixed(1)
+                );
+              }
+            }
+
+            // Case 3: Space-separated degree values
+            if (str.includes("°")) {
+              const values = str
+                .split(/\s+/)
+                .map((s: string) => {
+                  const match = s.match(/(\d+)°/);
+                  return match ? parseFloat(match[1]) : null;
+                })
+                .filter((n: number | null): n is number => n !== null);
+
+              if (values.length > 0) {
+                return Number(
+                  (
+                    values.reduce((a: number, b: number) => a + b) /
+                    values.length
+                  ).toFixed(1)
+                );
+              }
+            }
+
+            // Case 3: Single number
+            if (/^\d+\.?\d*$/.test(str)) {
+              return Number(parseFloat(str).toFixed(1));
+            }
+
+            return null;
           };
 
           const size = row[1]
@@ -78,7 +129,7 @@ const DataTransformer: React.FC = () => {
           const createRow = (
             hardness: number | null,
             thickness: number | null,
-            height: number | null,
+            originalHeight: number | null,
             size: number,
             temp: number,
             testType: number,
@@ -90,19 +141,23 @@ const DataTransformer: React.FC = () => {
             elongation: materialProps.elongation,
             elasticMod: materialProps.elasticMod,
             thickness,
-            height,
+            height: originalHeight,
             size,
             temperature: temp,
             testType,
             plasticineHeight,
           });
 
+          // CSA data with fallback for missing Original Hgt.
           if (row[2] && row[4] && row[5]) {
+            const originalHeight = row[6]
+              ? Number(row[6])
+              : Number(row[4]) || null;
             allRows.push(
               createRow(
                 csaHardness,
                 Number(row[2]) || null,
-                Number(row[4]) || null,
+                originalHeight,
                 size,
                 0,
                 0,
@@ -110,19 +165,8 @@ const DataTransformer: React.FC = () => {
               )
             );
           }
-          if (row[2] && row[6] && row[7]) {
-            allRows.push(
-              createRow(
-                csaHardness,
-                Number(row[2]) || null,
-                Number(row[6]) || null,
-                size,
-                1,
-                0,
-                Number(row[7]) || null
-              )
-            );
-          }
+
+          // EN data
           if (row[10] && row[12] && row[13]) {
             allRows.push(
               createRow(
